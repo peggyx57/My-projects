@@ -3549,8 +3549,9 @@ if __name__ == "__main__":
 """ co dodělat dál:
 - dodělat okno měření s váhami
 - upravit design správa operátorů
-- přidat nový barvičky hehe
+- přidat nový barvičky
 - do budoucna přidat uplně všude angličtinu
+
 
 
 
