@@ -1,4 +1,3 @@
-import dis
 from logging import root
 from tkinter import filedialog
 from turtle import mode, st
@@ -30,12 +29,12 @@ heslo_kamkoliv = "admin"  # Heslo pro přístup do nastavení a editaci modelů
 pocet_pro_ucl_lcl_fix_v_pripade_vypocitanych_control_limitu= 15 # počet, kdy se z not fixed stane fixed u UCL/LCL
 minimalni_pocet_namerench_bodu_spc=10 # prostě když nemám pevné limity, tak kolik hodnot je potřeba por výpočet UCL/LCL
 pocet_minut_na_rozjezd=10
-port_PC_pro_kabel_vahy = "COM2" # <-- ZMĚŇ PODLE SVÉHO PC (např. COM4, COM5)
+port_PC_pro_kabel_vahy = "COM2" # <-- ZMĚŇ PODLE PC (např. COM4, COM5)
 
 # --- DATA A TEXTY ---
 OPERATORS_JSON = """
 [
-    {"id": 0, "name": "Default"}
+
 ]
 """
 
@@ -854,7 +853,7 @@ class ModelSetupDialog(ctk.CTkToplevel):
         self.parent.umistit_okno_na_obrazovce(self, 350, 550, typ_okna="nastaveni")
         self.resizable(False, False)
         self.attributes("-topmost", True)
-        self.grab_set()
+        self.after(100, self.grab_set)
         
         self.dostupne_modely = self.parent.nacist_znacky()
         self.existujici_modely = self._ziskat_seznam_modelu()
@@ -1652,7 +1651,7 @@ class SPCApp(ctk.CTk):
                 #if "Smena" in posledni and posledni["Smena"] in ["A", "B", "C", "D"]:
                 #    self.aktualni_smena = posledni["Smena"] smazal jsem prozatím, je lepší když je N/A
             except: pass
-
+        
         # Graf settings
         sns.set_theme(style="darkgrid", rc={"axes.facecolor": "#2b2b2b", "figure.facecolor": "#2b2b2b", "text.color": "white", "xtick.color": "white", "ytick.color": "white"})
 
@@ -1660,7 +1659,7 @@ class SPCApp(ctk.CTk):
         self.setup_ui()
         #self.update_timer()
         
-        self.after(500, self.kontrola_povinneho_nastaveni)
+        self.after(500, self.kontrola_povinneho_nastaveni) 
         self.after(200, self.aktualizovat_semafor)
 
     def vypocitat_trend_a_status(self):
@@ -1877,6 +1876,7 @@ class SPCApp(ctk.CTk):
         je_spatna_linka = self.current_set_line in spatne_hodnoty
         
         if je_spatna_linka:
+            self.update()
             messagebox.showinfo(
                 "First Time Setup", 
                 "Welcome!\n\nBefore the first measurement, it is necessary to select a LINE.\n\nThe settings will now open."
@@ -2096,7 +2096,7 @@ class SPCApp(ctk.CTk):
 
         
         
-        self.scroll_models = ctk.CTkScrollableFrame(self.side_frame, label_text="")
+        self.scroll_models = ctk.CTkScrollableFrame(self.side_frame, label_text="", fg_color=("#DFDEDE", "#2b2b2b"), border_width=0)
         self.scroll_models.pack(pady=5, padx=10, fill="both", expand=True)
         self.refresh_model_buttons()
 
@@ -2184,7 +2184,7 @@ class SPCApp(ctk.CTk):
 
 
         # GRAF
-        self.graph_frame = ctk.CTkFrame(self, fg_color=("#B9B9B9", "#2b2b2b"))                                
+        self.graph_frame = ctk.CTkFrame(self, fg_color=("#DFDEDE", "#2b2b2b"))                                
         self.graph_frame.grid(row=1, column=1, sticky="nsew", padx=0, pady=(0, 0))
         if self.aktualni_model == "N/A":
             self.zobrazit_prazdny_stav()
@@ -2590,7 +2590,7 @@ class SPCApp(ctk.CTk):
             "height": 50, 
             "corner_radius": 8, 
             "font": ("Arial", 12, "bold"),
-            "fg_color": ("#ddd", "#3a3a3a"), # Šedá barva pozadí
+            "fg_color": ("#cccccc", "#3a3a3a"), # Šedá barva pozadí
             "text_color": ("black", "white"),
             "compound": "left", # Ikona vlevo, text vpravo
             "anchor": "center"
@@ -2620,7 +2620,7 @@ class SPCApp(ctk.CTk):
             toolbar_frame, 
             text=t["zoom"], 
             image=icon_zoom, 
-            command=self.toggle_zoom, 
+            command=self.toggle_zoom,
             **btn_params
         )
         self.btn_zoom.pack(side="left", padx=5)
@@ -2630,7 +2630,7 @@ class SPCApp(ctk.CTk):
             toolbar_frame, 
             text=t["save"], 
             image=icon_save, 
-            command=self.ulozit_do_pdf, 
+            command=self.ulozit_do_pdf,
             **btn_params
         )
         btn_save.pack(side="right", padx=5)
@@ -3232,7 +3232,7 @@ class SPCApp(ctk.CTk):
         t = TEXTS[self.jazyk]
         self.okno_nastaveni.title(t["settings"])
         self.okno_nastaveni.attributes("-topmost", True)
-        self.okno_nastaveni.grab_set()
+        self.okno_nastaveni.after(200, self.okno_nastaveni.grab_set)
         
         if vynucene_otevreni:
             def zeptat_na_zavreni():
@@ -3286,6 +3286,11 @@ class SPCApp(ctk.CTk):
         if new_line in ["N/A", "", t["just_choose"]]:
              messagebox.showerror(t["error"], t["choose_line"], parent=self.okno_nastaveni)
              return
+        aktualni_operatori = self.nacist_operatory()
+        is_only_default = len(aktualni_operatori) == 1 and "Default" in str(aktualni_operatori[0])
+        if len(aktualni_operatori) == 0 or is_only_default:
+            messagebox.showerror(t["error"], t["one_real_operator_at_least"], parent=self.okno_nastaveni)
+            return
         old_line = self.current_set_line
         is_first_setup = old_line in ["N/A", t["just_choose"], "", None]
         is_changing_line = new_line != old_line
@@ -3328,7 +3333,7 @@ class SPCApp(ctk.CTk):
         # Aplikace změn HNED
         ctk.set_appearance_mode(finalni_vzhled_kod)
         ctk.set_default_color_theme(new_color_theme)
-        # Barva se aplikuje až po restartu většinou, ale nastavíme ji
+        
         
         self.okno_nastaveni.destroy()
         self.clear_ui()
@@ -3383,15 +3388,15 @@ class SPCApp(ctk.CTk):
     def otevrit_spravu_operatoru(self):
         """Otevře okno pro přidávání/odebírání operátorů."""
         # 1. Bezpečnostní ověření heslem (volitelné, ale doporučené)
-        if not self.overit_heslo(okno=self.okno_nastaveni):
-            return
+        if self.current_set_line != "N/A":
+            if not self.overit_heslo(okno=self.okno_nastaveni):
+                return
         
         if not self.settings.get("line") == "N/A":
             if self.okno_nastaveni.winfo_exists():
                     self.okno_nastaveni.destroy()
                 
         t = TEXTS[self.jazyk]
-        
         # 2. Vytvoření okna
         self.win_ops = ctk.CTkToplevel(self)
         self.win_ops.title(t["manage_operators"])
@@ -3551,6 +3556,12 @@ if __name__ == "__main__":
 - upravit design správa operátorů
 - přidat nový barvičky
 - do budoucna přidat uplně všude angličtinu
+- poslední hodnota v bublině nejde vidět, musí být na druhou stranu
+
+
+
+
+"""
 
 
 
@@ -3558,3 +3569,4 @@ if __name__ == "__main__":
 
 
 """
+
