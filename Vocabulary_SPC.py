@@ -177,7 +177,7 @@ TEXTS = {
         "min_one_operator": "Musí být alespoň jeden operátor! Nelze smazat posledního operátora.",
         "timer_will_reset": "Uložením změn se resetuje časovač výroby (začne Rozjezd). Opravdu chcete pokračovat?",
         "name_cant_be_changed": "Název modelu nelze v budoucnu měnit. Je název modelu správně?",
-        
+        "one_real_operator_at_least": "Klikněte prosím na Správa operátorů a přidejte minimálně jednoho operátora. Nemůžete pokračovat bez operátora."        
         
         
 
@@ -334,8 +334,8 @@ TEXTS = {
         "values_loaded_msg": "Values have been loaded.\nPlease check the Timer and SPC limits and press Save again.",
         "manage_operators": "Manage Operators",
         "operators_title": "Operators list",
-        "add_operator__number_placeholder": "Number",
-        "add_operator__name_placeholder": "Name",
+        "add_operator_number_placeholder": "Number",
+        "add_operator_name_placeholder": "Name",
         "btn_add": "Add",
         "btn_delete": "Delete",
         "confirm_delete_operator": "Really delete operator {jmeno}?",
@@ -352,8 +352,6 @@ TEXTS = {
         "operator_number_and_name_required": "You must enter both operator number and name!",
         "no_model_selected": "You have not selected any model.\n\nPlease select a model from the list on the left or create a new one.",
         "btn_edit": "Edit operator",
-        "add_operator_number_placeholder": "Number",
-        "add_operator_name_placeholder": "Name",
         "password_dialog_title": "Password Verification",
         "enter_password": "Enter password",
         "choose_model_first": "Please choose a model first!",
@@ -363,6 +361,7 @@ TEXTS = {
         "min_one_operator": "There must be at least one operator! Cannot delete the last operator.",
         "timer_will_reset": "Saving changes will reset the production timer (start-up). Do you really want to proceed?",
         "name_cant_be_changed": "The name of the model cannot be changed in the future. Is the model name correct?",
+        "one_real_operator_at_least": "Please click on Manage Operators and add at least one operator. You cannot proceed with no operator."
         
         
         
@@ -548,7 +547,8 @@ TEXTS = {
         "delete_model": "Удалить модель",
         "min_one_operator": "Должен быть хотя бы один оператор! Невозможно удалить последнего оператора.",
         "timer_will_reset": "Сохранение изменений сбросит таймер производства (начнется Разогрев). Вы действительно хотите продолжить?",
-        "name_cant_be_changed": "Имя модели не может быть изменено в будущем. Имя модели указано верно?"
+        "name_cant_be_changed": "Имя модели не может быть изменено в будущем. Имя модели указано верно?",
+        "one_real_operator_at_least": "Пожалуйста, нажмите на Управление операторами и добавьте как минимум одного реального оператора. Вы не можете продолжить без оператора."
         
 
 
@@ -731,7 +731,8 @@ TEXTS = {
             "delete_model": "Ștergeți modelul",
             "min_one_operator": "Trebuie să existe cel puțin un operator! Nu se poate șterge ultimul operator.",
             "timer_will_reset": "Salvarea modificărilor va reseta timerul de producție (începe faza de încălzire). Doriți să continuați?",
-            "name_cant_be_changed": "Numele modelului nu poate fi schimbat în viitor. Este numele modelului corect?"
+            "name_cant_be_changed": "Numele modelului nu poate fi schimbat în viitor. Este numele modelului corect?",
+            "one_real_operator_at_least": "Vă rugăm să faceți clic pe Gestionați operatorii și să adăugați cel puțin un operator real. Nu puteți continua doar cu operatorul implicit."
             
     }
 }
