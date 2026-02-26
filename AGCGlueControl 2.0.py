@@ -23,6 +23,9 @@ from Vocabulary_SPC import TEXTS
 import serial
 import re
 from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+import matplotlib.backends.backend_pdf #kvůli Pyinstalleru
+
+
 
 
 heslo_kamkoliv = "admin"  # Heslo pro přístup do nastavení a editaci modelů
@@ -46,7 +49,8 @@ class PredictionDialog(ctk.CTkToplevel):
         
         
         # Nastavení okna
-        self.title(t["prediction"])
+        beta_title = t["prediction"] + " (Beta test)"
+        self.title(beta_title)
         self.parent.umistit_okno_na_obrazovce(self, 900, 600)
         self.grab_set()
         
@@ -180,7 +184,7 @@ class DataAnalysisDialog(ctk.CTkToplevel):
         ctk.CTkFrame(self.left_frame, height=2, fg_color="gray50").pack(fill="x", padx=20, pady=20)
 
         # Statistiky
-        ctk.CTkLabel(self.left_frame, text="Statistiky & Cpk", font=("Arial", 16, "bold")).pack(pady=(0, 10))
+        ctk.CTkLabel(self.left_frame, text=t["statisticks_cpk"], font=("Arial", 16, "bold")).pack(pady=(0, 10))
         
         self.stats_frame = ctk.CTkFrame(self.left_frame, fg_color="transparent")
         self.stats_frame.pack(fill="x", padx=20)
@@ -235,9 +239,14 @@ class DataAnalysisDialog(ctk.CTkToplevel):
             val_lcl = self.parent.fixed_lcl
             ucl_info = " (Fix)"
             lcl_info = " (Fix)"
-        elif std_dev > 0 and count >= 2:
-            val_ucl = mean + (3 * std_dev)
-            val_lcl = mean - (3 * std_dev)
+        elif count >= minimalni_pocet_namerench_bodu_spc:
+            mr = values.diff().abs()
+            mean_mr = mr.mean()
+            sigma_mr = mean_mr / 1.128
+            
+            if sigma_mr > 0:
+                val_ucl = mean + (3 * sigma_mr)
+                val_lcl = mean - (3 * sigma_mr)
         
         # Seznam statistik k zobrazení
         stats = [
@@ -249,9 +258,9 @@ class DataAnalysisDialog(ctk.CTkToplevel):
             ("---", "---"),
             (f"{t['stat_mean']}:", f"{mean:.3f}"),
             (f"{t['stat_sigma']}:", f"{std_dev:.3f}"),
-            ("---", "---"),
-            (f"{t['stat_cp']}:", f"{cp:.2f}"), 
-            (f"{t['stat_cpk']}:", f"{cpk:.2f}"),
+            #("---", "---"),
+            #(f"{t['stat_cp']}:", f"{cp:.2f}"), 
+            #(f"{t['stat_cpk']}:", f"{cpk:.2f}"),
             ("---", "---"),
             (f"UCL{ucl_info}:", f"{val_ucl:.3f}" if val_ucl else "N/A"),
             (f"LCL{lcl_info}:", f"{val_lcl:.3f}" if val_lcl else "N/A")
@@ -323,39 +332,47 @@ class DataAnalysisDialog(ctk.CTkToplevel):
         mean = vals.mean()
         std = vals.std()
 
+        pocet_dat = len(vals)
+        pocet_sloupcu = int(np.ceil(np.log2(pocet_dat) + 1)) if pocet_dat > 0 else 1
+
         # 3. HISTOGRAM (Sloupce)
         # density=False -> Osa Y ukazuje POČET KUSŮ (Counts)
         counts, bins, patches = ax.hist(
             vals, 
-            bins='auto',      # Automatický počet sloupců
+            bins=pocet_sloupcu,      
             density=False,    # <--- DŮLEŽITÉ: Chceme počty, ne hustotu
             color='#3B8ED0', 
             alpha=0.7, 
-            rwidth=0.9,       # Mezery mezi sloupci
+            rwidth=0.99,       # Mezery mezi sloupci
             edgecolor=text_color, 
-            label=t.get("data", "Naměřeno")
+            label=t["measured"]
         )
         
         # 4. GAUSSOVA KŘIVKA (Přizpůsobená)
         if std > 0:
-            # Rozsah osy X
-            xmin, xmax = ax.get_xlim()
-            # Roztáhneme osu X, aby se tam vešly i limity
-            limit_min = min(xmin, self.parent.lsl - 0.2)
-            limit_max = max(xmax, self.parent.usl + 0.2)
+            data_min = vals.min()
+            data_max = vals.max()
+            nejmensi_bod = min(data_min, self.parent.lsl)
+            nejvetsi_bod = max(data_max, self.parent.usl)
+            rozpeti = nejvetsi_bod - nejmensi_bod
+            if rozpeti == 0: rozpeti = 0.1 # Pojistka, kdyby všechna data byla stejná
+            
+            # Nastavíme okraje na 10 % z každé strany od reálných dat
+            limit_min = nejmensi_bod - (rozpeti * 0.05)
+            limit_max = nejvetsi_bod + (rozpeti * 0.05)
+            
+            # Pokud by limity byly úplně ustřelené, ořízneme graf jen na data!
             ax.set_xlim(limit_min, limit_max)
             
-            x = np.linspace(limit_min, limit_max, 100)
+            x = np.linspace(limit_min, limit_max, 200) # 200 pro hladší křivku
+            
+            # 2. Spočítáme hustotu pro naši osu X
             
             # a) Výpočet matematické hustoty (Normal PDF)
-            # Používám čistý numpy vzorec, abys nemusel importovat scipy
             p = (1 / (np.sqrt(2 * np.pi) * std)) * np.exp(-0.5 * ((x - mean) / std)**2)
             
-            # b) ŠKÁLOVÁNÍ (To je to kouzlo)
-            # Aby byla křivka vidět, musíme ji vynásobit počtem dat a šířkou sloupce
-            bin_width = bins[1] - bins[0] # Šířka jednoho sloupce
-            pocet_dat = len(vals)
-            
+            # b) ŠKÁLOVÁNÍ
+            bin_width = bins[1] - bins[0]
             p_scaled = p * pocet_dat * bin_width
             
             ax.plot(x, p_scaled, color='#FF9800', linewidth=2.5, label="Gauss")
@@ -363,8 +380,25 @@ class DataAnalysisDialog(ctk.CTkToplevel):
         # 5. LIMITY (Svislé čáry)
         ax.axvline(self.parent.usl, color='#FF1744', linestyle='--', linewidth=2, label='USL/LSL')
         ax.axvline(self.parent.lsl, color='#FF1744', linestyle='--', linewidth=2)
-        ax.axvline(self.parent.target, color='#00E676', linestyle='-', linewidth=2, label='Target')
-        ax.axvline(mean, color=text_color, linestyle=':', linewidth=2, alpha=0.6, label='Průměr')
+        ax.axvline(self.parent.target, color='#00E676', linestyle='-', linewidth=2, label=t["target"])
+
+        if hasattr(self.parent, 'fixed_ucl') and self.parent.fixed_ucl is not None:
+            # Pokud máme zafixováno, použijeme fixní hodnoty
+            h_ucl = self.parent.fixed_ucl
+            h_lcl = self.parent.fixed_lcl
+            stitek = "UCL/LCL (Fix)"
+        else:
+            # Pokud nemáme fixní, spočítáme to přes Moving Range (aby to sedělo s trendem)
+            mr = vals.diff().abs()
+            sigma_mr = mr.mean() / 1.128
+            h_ucl = mean + (3 * sigma_mr)
+            h_lcl = mean - (3 * sigma_mr)
+            stitek = "UCL/LCL (Auto-MR)"
+
+        # Vykreslení (vyměň za ty původní ax.axvline pro Kv)
+        ax.axvline(mean, color='black', linestyle=':', linewidth=2, label=t["stat_mean"])
+        ax.axvline(h_lcl, color='#3B8ED0', linestyle='--', linewidth=1.5, label=stitek)
+        ax.axvline(h_ucl, color='#3B8ED0', linestyle='--', linewidth=1.5)
 
         # 6. POPISKY
         ax.set_title(t["histogram"], color=text_color, fontsize=14, fontweight='bold')
@@ -942,13 +976,18 @@ class ModelSetupDialog(ctk.CTkToplevel):
         self.entry_lcl = self._add_input("LCL", 9, val_lcl, unit="g")
 
         self.prepni_spc_vstupy()
+        seznam_entries= [self.entry_usl, self.entry_target, self.entry_lsl, self.entry_timer, self.entry_ucl, self.entry_lcl]
+        if not self.edit_model:
+            seznam_entries.append(self.entry_specific_model)
+        for entry in seznam_entries:
+            entry.bind("<Return>", self.ulozit_model)
 
         # TLAČÍTKO
         btn_text = t["save_changes"] if self.edit_model else t["save_new_model"]
         self.btn_save = ctk.CTkButton(self.frame, text=btn_text, command=self.ulozit_model, height=50, font=("Arial", 16, "bold"))
         self.btn_save.grid(column=0, row=12, columnspan=2, pady=30, padx=15, sticky="ew")
 
-        self.deiconify() 
+        self.deiconify()
 
     def _ziskat_limity_z_historie(self, model_name):
         """
@@ -1100,7 +1139,7 @@ class ModelSetupDialog(ctk.CTkToplevel):
         entry.insert(0, str(value))
         return entry
 
-    def ulozit_model(self):
+    def ulozit_model(self, event=None):
         t= TEXTS[self.parent.jazyk]
         
             
@@ -1538,7 +1577,9 @@ class InputDialog(ctk.CTkToplevel):
             except AttributeError:
                 print("Nenalezeno!")
 
-            self.parent.add_record(vaha_lepidla, operator, smena)
+            vysledek_zapisu = self.parent.add_record(vaha_lepidla, operator, smena, okno_zadani=self)
+            if not vysledek_zapisu:
+                return
             
             self.parent.reset_timer(typ="standard")
 
@@ -2007,10 +2048,10 @@ class SPCApp(ctk.CTk):
             print(f"Chyba historie: {e}")
             return empty_df
 
-    def ulozit_do_csv(self, datum, cas, hodnota, operator, smena, status):
+    def ulozit_do_csv(self, datum, cas, hodnota, operator, smena, status, okno_zadani=None):
         t= TEXTS[self.jazyk]
         file_exists = os.path.isfile(self.cesta_data)
-        
+        okno=okno_zadani if okno_zadani else self
         def to_excel(v): return str(v).replace(".", ",")
 
         try:
@@ -2024,10 +2065,13 @@ class SPCApp(ctk.CTk):
                     to_excel(self.usl), to_excel(self.lsl), to_excel(self.target), status
                 ])
                 print(f"Uloženo do CSV.")
+                return True
         except PermissionError:
-            messagebox.showerror(t["error"], t["close_excel"], parent=self)
+            messagebox.showerror(t["error"], t["close_excel"], parent=okno)
+            return False
         except Exception as e:
-            print(f"Chyba CSV: {e}")
+            print(f"Chyba CSV: {e}", parent=okno)
+            return False
 
     # --- UI METODY ---
     def umistit_okno_na_obrazovce(self, okno, sirka, vyska, typ_okna=""):
@@ -2545,10 +2589,13 @@ class SPCApp(ctk.CTk):
         dummy_frame.grid_remove()         # A hned ho schováme, aby nebyl vidět
 
         
-        # Logiku pošleme do dummy_frame, ne přímo do graph_frame!
+        
         self.toolbar_logic = NavigationToolbar2Tk(self.canvas, dummy_frame)
         self.toolbar_logic.update()
-        # -----------------------------------
+        # Možná oprava pro případ, že by se toolbar přesto snažil zobrazit:
+        self.toolbar_logic.pack_forget()
+        self.toolbar_logic.grid_forget()
+        self.toolbar_logic.place_forget()
         
         # 6. Vytvoření našich vlastních tlačítek
         self.create_custom_toolbar()
@@ -2641,7 +2688,6 @@ class SPCApp(ctk.CTk):
             # PyInstaller vytvoří dočasnou složku _MEIPASS
             base_path = sys._MEIPASS
         except Exception:
-            # Tady je změna: použijeme cestu ke skriptu, ne k pracovní složce
             base_path = os.path.dirname(os.path.abspath(__file__))
 
         return os.path.join(base_path, relative_path)
@@ -2651,22 +2697,22 @@ class SPCApp(ctk.CTk):
         # Změna barvy tlačítka podle stavu
         if self.toolbar_logic.mode == "pan/zoom": # Matplotlib interní název pro Pan mode
              self.btn_pan.configure(fg_color="#3B8ED0", text_color="white") # Aktivní (Modrá)
-             self.btn_zoom.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white")) # Reset Zoomu
+             self.btn_zoom.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white")) # Reset Zoomu
         else:
-             self.btn_pan.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white")) # Deaktivní
+             self.btn_pan.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white")) # Deaktivní
 
     def toggle_zoom(self):
         self.toolbar_logic.zoom() # Zavolá funkci matplotlibu
         if self.toolbar_logic.mode == "zoom rect": # Matplotlib interní název pro Zoom mode
              self.btn_zoom.configure(fg_color="#3B8ED0", text_color="white") # Aktivní (Modrá)
-             self.btn_pan.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white")) # Reset Pan
+             self.btn_pan.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white")) # Reset Pan
         else:
-             self.btn_zoom.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white")) # Deaktivní
+             self.btn_zoom.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white")) # Deaktivní
     
     def update_graph(self):
         if not hasattr(self, 'ax') or self.ax is None:
             return
-        
+        t= TEXTS[self.jazyk]
         # 1. Styling a vyčištění
         bg_color, face_color, text_color = self.get_graph_colors()
         self.ax.clear()
@@ -2679,7 +2725,7 @@ class SPCApp(ctk.CTk):
         for spine in self.ax.spines.values(): spine.set_edgecolor(text_color)
         self.ax.grid(True, color=text_color, alpha=0.15)
 
-        titulek_text = TEXTS[self.jazyk]["spc_trend"]
+        titulek_text = t["spc_trend"]
         MIN_BODU_SPC = minimalni_pocet_namerench_bodu_spc
 
         if self.df.empty:
@@ -2760,11 +2806,13 @@ class SPCApp(ctk.CTk):
             is_fixed = True
             label_spc = "UCL/LCL (Fix)"
         elif aktualni_pocet >= MIN_BODU_SPC:
-             std = self.df_plot["Hodnota"].std()
-             if std > 0:
-                ucl_final = mean + 3*std
-                lcl_final = mean - 3*std
-                label_spc = "UCL/LCL (Auto)"
+            mr = self.df_plot["Hodnota"].diff().abs() # Vypočítáme Moving Range (rozdíly mezi po sobě jdoucími body)
+            mean_mr = mr.mean()
+            sigma_mr = mean_mr / 1.128 # Odhad směrodatné odchlky z MR
+            if sigma_mr > 0:
+                ucl_final = mean + 3*sigma_mr
+                lcl_final = mean - 3*sigma_mr
+                label_spc = "UCL/LCL (Auto-MR)"
         
         if aktualni_pocet < MIN_BODU_SPC and not is_fixed:
              titulek_text += f" {TEXTS[self.jazyk]['calibration']}: ({aktualni_pocet}/{MIN_BODU_SPC})"
@@ -2818,10 +2866,10 @@ class SPCApp(ctk.CTk):
         # 6. Limity (čáry)
         self.ax.axhline(self.usl, color='#ff5555', linestyle='--', label="USL/LSL")
         self.ax.axhline(self.lsl, color='#ff5555', linestyle='--')
-        self.ax.axhline(self.target, color="#001EC5", linestyle='-', alpha=0.3, label="Target", linewidth=3)
+        self.ax.axhline(self.target, color="#001EC5", linestyle='-', alpha=0.3, label=t["target"], linewidth=3)
         
         if mean is not None:
-            self.ax.axhline(mean, color='black', linestyle=':', alpha=0.6, label="Mean")
+            self.ax.axhline(mean, color='black', linestyle=':', alpha=0.6, label=t["stat_mean"])
         
         if ucl_final is not None:
             style = '-' if is_fixed else '-.'
@@ -2896,6 +2944,32 @@ class SPCApp(ctk.CTk):
                 self.annot.xy = (event.xdata, event.ydata)
                 self.annot.set_text(text_bubliny)
                 
+                sirka_grafu, vyska_grafu = self.fig.canvas.get_width_height()
+                
+                # Výchozí pozice: kousek vpravo a nahoru od myši
+                offset_x = 15
+                offset_y = 15
+                ha = "left"
+
+                # Hlídáme JEN okraje okna, aby text neutekl mimo monitor
+                if event.x > (sirka_grafu * 0.75):  # Moc vpravo -> překlopíme doleva
+                    offset_x = -15
+                    ha = "right"
+                    
+                if event.y > (vyska_grafu * 0.80):  # Moc nahoře -> překlopíme dolů
+                    offset_y = -15
+
+                # Nastavení pozice
+                self.annot.set_position((offset_x, offset_y))
+                self.annot.set_ha(ha)
+                
+                # --- KLÍČ K ÚSPĚCHU: VRSTVY A NEPRŮHLEDNOST ---
+                # zorder=100 znamená, že se to vykreslí ÚPLNĚ NADE VŠÍM (nad čarou i body)
+                self.annot.set_zorder(100) 
+                
+                # Nastavíme neprůhlednost na 1.0 (100% plná barva, žádné prosvítání)
+                self.annot.get_bbox_patch().set_alpha(1.0)
+
                 # 1. Barva textu
                 self.annot.set_color(text_color)
                 
@@ -3085,8 +3159,8 @@ class SPCApp(ctk.CTk):
         
         # 2. Resetujeme vizuální styl tlačítek (pro jistotu)
         try:
-            self.btn_pan.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white"))
-            self.btn_zoom.configure(fg_color=("#ddd", "#3a3a3a"), text_color=("black", "white"))
+            self.btn_pan.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white"))
+            self.btn_zoom.configure(fg_color=("#cccccc", "#3a3a3a"), text_color=("black", "white"))
         except:
             pass
 
@@ -3127,7 +3201,7 @@ class SPCApp(ctk.CTk):
         else:
             self.toplevel_window.focus()
 
-    def add_record(self, value, operator, smena):
+    def add_record(self, value, operator, smena, okno_zadani=None):
         t = TEXTS[self.jazyk]
         je_NOK = False
         spc_varovani = False
@@ -3172,52 +3246,59 @@ class SPCApp(ctk.CTk):
         datum = teor_ted.strftime("%Y-%m-%d")
         plny_cas = teor_ted.strftime("%H:%M:%S") 
 
+        uspesne_ulozeno = self.ulozit_do_csv(datum, plny_cas, value, operator, smena, status)
+        if not uspesne_ulozeno:
+            return False
+
         new_row = {"Datum": datum, "Cas": plny_cas, "Hodnota": value, "Operator": operator,"Smena": smena, "Status": status}
         self.df = pd.concat([self.df, pd.DataFrame([new_row])], ignore_index=True)
         
-        self.ulozit_do_csv(datum, plny_cas, value, operator, smena, status)
         self.timer_seconds = self.shift_duration
 
         pocet_dat = len(self.df)
 
         if pocet_dat == self.LIMIT_PRO_UCL_FIX and self.fixed_ucl is None:
             print(f"Dosaženo {self.LIMIT_PRO_UCL_FIX} měření. Fixuji UCL/LCL...")
-            
-            mean = self.df["Hodnota"].mean()
-            std = self.df["Hodnota"].std()
-            
-            if std > 0:
-                # 1. Vypočítáme limity
-                nove_ucl = mean + (3 * std)
-                nove_lcl = mean - (3 * std)
-                
-                # Zaokrouhlíme na 3 desetinná místa pro hezký zápis
-                nove_ucl = round(nove_ucl, 3)
-                nove_lcl = round(nove_lcl, 3)
+            hodnoty = pd.to_numeric(self.df["Hodnota"].astype(str).str.replace(',', '.'), errors='coerce').dropna()
 
-                # 2. Uložíme do paměti aplikace (okamžitá změna v grafu)
-                self.fixed_ucl = nove_ucl
-                self.fixed_lcl = nove_lcl
-                
-                # 3. Zapíšeme NAVŽDY do souboru CSV (modely_spc.csv)
-                # Musíme tam poslat i všechny ostatní parametry, aby se nesmazaly
-                self.aktualizovat_databazi_modelu(
-                    self.aktualni_model,
-                    self.current_set_line,
-                    self.usl,
-                    self.lsl,
-                    self.target,
-                    int(self.shift_duration / 60), # Timer v minutách
-                    str(nove_ucl), # UCL
-                    str(nove_lcl)  # LCL
-                )
-                
-                def zobrazit_info_okno():
-                    messagebox.showinfo(
-                        "SPC Info", 
-                        f"Proces byl stabilizován.\n\nUCL a LCL byly automaticky vypočteny a zafixovány:\nUCL: {nove_ucl}\nLCL: {nove_lcl}"
+            if len(hodnoty) > 1:
+                mean = hodnoty.mean()
+                    
+                # --- NOVÝ VÝPOČET PŘES KLOUZAVÉ ROZPĚTÍ (MR) ---
+                mr = hodnoty.diff().abs()
+                sigma_mr = mr.mean() / 1.128
+            
+                if sigma_mr > 0:
+                    # 1. Vypočítáme limity
+                    nove_ucl = mean + (3 * sigma_mr)
+                    nove_lcl = mean - (3 * sigma_mr)
+                    
+                    # Zaokrouhlíme na 3 desetinná místa pro hezký zápis
+                    nove_ucl = round(nove_ucl, 3)
+                    nove_lcl = round(nove_lcl, 3)
+
+                    # 2. Uložíme do paměti aplikace (okamžitá změna v grafu)
+                    self.fixed_ucl = nove_ucl
+                    self.fixed_lcl = nove_lcl
+                    
+                    # 3. Zapíšeme NAVŽDY do souboru CSV (modely_spc.csv)
+                    self.aktualizovat_databazi_modelu(
+                        self.aktualni_model,
+                        self.current_set_line,
+                        self.usl,
+                        self.lsl,
+                        self.target,
+                        int(self.shift_duration / 60), # Timer v minutách
+                        str(nove_ucl), # UCL
+                        str(nove_lcl)  # LCL
                     )
-                self.after(300, zobrazit_info_okno)
+                    text_process_stabilized = t["process_stabilized_ucl_lcl_fixed"].format(ucl=nove_ucl, lcl=nove_lcl)
+                    def zobrazit_info_okno():
+                        messagebox.showinfo(
+                            "SPC Info", 
+                            text_process_stabilized
+                        )
+                    self.after(300, zobrazit_info_okno)
 
         try:
             self.lbl_timer_val.configure(text_color="#3B8ED0")
@@ -3225,7 +3306,8 @@ class SPCApp(ctk.CTk):
         
         self.update_graph()
         self.aktualizovat_semafor()
-
+        return True
+    
     def nastaveni_app(self, vynucene_otevreni=False):
         self.okno_nastaveni = ctk.CTkToplevel(self)
         self.umistit_okno_na_obrazovce(self.okno_nastaveni, 400, 500, typ_okna="nastaveni")
@@ -3556,17 +3638,13 @@ if __name__ == "__main__":
 - upravit design správa operátorů
 - přidat nový barvičky
 - do budoucna přidat uplně všude angličtinu
-- poslední hodnota v bublině nejde vidět, musí být na druhou stranu
-
-
-
-
-"""
-
-
-
+- doupravit gitogram, aby gaussovka vypadala tak jak má
+- u vykreslení predikce není vykreslen průměr 
+- automatické mazání měření, pokud přesáhne určitý počet (třeba 1000)  
+- ochrana proti dvojímu otevření aplikace (kontrola běžící instance)
 
 
 
 """
+
 
